@@ -1,0 +1,26 @@
+@import "tailwindcss";
+@font-face {
+  font-family: 'bellina';
+  src: url(./font/Bellina.ttf);
+}
+
+
+.fontt{
+  font-family: 'bellina';
+}
+
+@font-face {
+  font-family: 'dune';
+  src: url(./font/Dune_Rise.ttf);
+}
+
+
+@font-face {
+  font-family: "roboto";
+  src: url(./font/Roboto-Regular.ttf);
+}
+
+h3{
+  font-family: 'bellina';
+  font-size: 1.4rem;
+}
