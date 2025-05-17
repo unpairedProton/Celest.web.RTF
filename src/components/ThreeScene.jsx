@@ -4,6 +4,10 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as THREE from 'three';
 import { gsap } from 'gsap';
+import { useGSAP } from '@gsap/react';
+
+
+
 
 function PlanetsGroup({ groupRef, onPlanetClick }) {
   const planetRefs = [useRef(), useRef(), useRef()];
@@ -15,6 +19,13 @@ function PlanetsGroup({ groupRef, onPlanetClick }) {
   const radius = 1.3;
   const segments = 40;
   const orbitRadius = 4.5;
+
+  // Set sRGB color space for textures
+  useEffect(() => {
+    textures.forEach(texture => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+    });
+  }, [textures]);
 
   // Each planet rotates on its own axis
   useFrame(() => {
@@ -53,6 +64,9 @@ function PlanetsGroup({ groupRef, onPlanetClick }) {
 
 function StarsBG({ starRef }) {
   const starTexture = useLoader(THREE.TextureLoader, './stars2.jpg');
+  useEffect(() => {
+    starTexture.colorSpace = THREE.SRGBColorSpace;
+  }, [starTexture]);
   return (
     <mesh ref={starRef}>
       <sphereGeometry args={[50, 64, 64]} />
@@ -66,7 +80,7 @@ function StarsBG({ starRef }) {
   );
 }
 
-function Ship({ onShipLoaded }) {
+function Ship({ onShipLoaded, onClick }) {
   const gltf = useLoader(GLTFLoader, '/3d/ship.glb');
   const ref = useRef();
 
@@ -76,6 +90,11 @@ function Ship({ onShipLoaded }) {
     }
   }, [onShipLoaded]);
 
+  const handlePointerDown = (event) => {
+    event.stopPropagation();
+    if (onClick) onClick(event);
+  };
+
   return (
     <primitive
       ref={ref}
@@ -83,6 +102,7 @@ function Ship({ onShipLoaded }) {
       position={[0, 0.1, 7]}
       scale={[0.01, 0.01, 0.01]}
       rotation={[Math.PI / 4, -Math.PI / 2, 0]}
+      onPointerDown={handlePointerDown}
     />
   );
 }
@@ -110,94 +130,144 @@ const planetAnimationTime = 1.58;
 const shipAnimationTime = 1.2;
 const REVOLUTION_STEP = (Math.PI * 2) / 3;
 
+
 const ThreeScene = () => {
   const [ship, setShip] = useState();
-  const [lastWheelTime, setLastWheelTime] = useState(0);
   const [scrollCount, setScrollCount] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
+  const wheelTimerRef = useRef(null);
   const groupRef = useRef();
   const starRef = useRef();
+  const animationInProgressRef = useRef(false);
+  const targetRotationRef = useRef(4.715); // Starting rotation value
 
-  // Wheel event handler
+
+  // Complete animation function - separated for clarity
+  const completeAnimation = () => {
+    animationInProgressRef.current = false;
+    setIsAnimating(false);
+  };
+
+
+  
+  // Perform rotation animation with fixed angle steps
+  const performRotation = () => {
+    if (animationInProgressRef.current || !groupRef.current || !starRef.current) return;
+    
+    // Lock animation state using ref for immediate effect
+    animationInProgressRef.current = true;
+    setIsAnimating(true);
+    
+    // Calculate next rotation angle (always exactly one step forward)
+    targetRotationRef.current += REVOLUTION_STEP;
+    
+    // Update scroll count
+    const newScrollCount = (scrollCount + 1) % 3;
+    setScrollCount(newScrollCount);
+    
+    // Animate headings
+    const heading = document.querySelectorAll('.headings');
+    gsap.to(heading, {
+      y: `-=${100}%`,
+      duration: planetAnimationTime,
+      ease: 'none',
+    });
+    
+    gsap.from('h3', {
+      opacity: 0,
+      duration: 2.1,
+      ease: 'expo.in',
+    });
+    
+    // Animate group to exact target angle
+    gsap.to(groupRef.current.rotation, {
+      y: targetRotationRef.current,
+      duration: planetAnimationTime,
+      ease: 'none',
+      onComplete: completeAnimation
+    });
+    
+    // Animate stars
+    gsap.to(starRef.current.rotation, {
+      y: targetRotationRef.current,
+      duration: planetAnimationTime,
+      ease: 'none',
+    });
+    
+    // Reset to first position if needed
+    if (newScrollCount === 0) {
+      gsap.to(heading, {
+        y: `0`,
+        duration: planetAnimationTime,
+        ease: 'power2.inOut',
+      });
+    }
+    
+    // Animate ship
+    if (ship) {
+      gsap.to(ship.position, {
+        y: getRandomInRange(),
+        duration: shipAnimationTime,
+        ease: 'power1.inOut',
+        onComplete: () => {
+          gsap.to(ship.position, {
+            y: 0.1,
+            duration: 0.8,
+            ease: 'power1.inOut',
+          });
+        },
+      });
+      
+      gsap.to(ship.rotation, {
+        x: getRandomRadianAngle(),
+        duration: shipAnimationTime,
+        ease: 'power1.inOut',
+        onComplete: () => {
+          gsap.to(ship.rotation, {
+            x: Math.PI / 4,
+            duration: 0.8,
+            ease: 'power1.inOut',
+          });
+        },
+      });
+    }
+  };
+
+  // Wheel event handler with debounce protection
   useEffect(() => {
     function handleWheel(event) {
-      if (isAnimating || !groupRef.current || !starRef.current) return;
-      const currentTime = Date.now();
-      if (currentTime - lastWheelTime > 2000) {
-        setLastWheelTime(currentTime);
-        setIsAnimating(true);
-        const wheelDirect = event.deltaY > 0 ? 'down' : 'up';
-        let newScrollCount = (scrollCount + 1) % 3;
-        setScrollCount(newScrollCount);
-        // Animate headings (if needed)
-        const heading = document.querySelectorAll('.headings');
-        gsap.to(heading, {
-          y: `-=${100}%`,
-          duration: planetAnimationTime,
-          ease: 'none',
-        });
-        gsap.from('h3', {
-          opacity: 0,
-          duration: 2.1,
-          ease: 'expo.in',
-        });
-        // Animate group and stars to the next angle from current
-        const currentAngle = groupRef.current.rotation.y;
-        const nextAngle = currentAngle + REVOLUTION_STEP;
-        gsap.to(groupRef.current.rotation, {
-            y: `+=${(Math.PI * 2) / 3}`,
-          duration: planetAnimationTime,
-          ease: 'none',
-          onComplete: () => setIsAnimating(false),
-        });
-        gsap.to(starRef.current.rotation, {
-          y: nextAngle,
-          duration: planetAnimationTime,
-          ease: 'none',
-        });
-        if (newScrollCount === 0) {
-          gsap.to(heading, {
-            y: `0`,
-            duration: planetAnimationTime,
-            ease: 'power2.inOut',
-          });
-        }
-        // Animate ship
-        if (ship) {
-          gsap.to(ship.position, {
-            y: getRandomInRange(),
-            duration: shipAnimationTime,
-            ease: 'power1.inOut',
-            onComplete: () => {
-              gsap.to(ship.position, {
-                y: 0.1,
-                duration: 0.8,
-                ease: 'power1.inOut',
-              });
-            },
-          });
-          gsap.to(ship.rotation, {
-            x: getRandomRadianAngle(),
-            duration: shipAnimationTime,
-            ease: 'power1.inOut',
-            onComplete: () => {
-              gsap.to(ship.rotation, {
-                x: Math.PI / 4,
-                duration: 0.8,
-                ease: 'power1.inOut',
-              });
-            },
-          });
-        }
+      // Skip if animation is in progress
+      if (animationInProgressRef.current || isAnimating) return;
+      
+      // Clear any pending timer
+      if (wheelTimerRef.current) {
+        clearTimeout(wheelTimerRef.current);
       }
+      
+      // Set a timer to trigger rotation after a short delay
+      // This debounces multiple rapid wheel events
+      wheelTimerRef.current = setTimeout(() => {
+        performRotation();
+        wheelTimerRef.current = null;
+      }, 50); // Short delay for debouncing
     }
+    
+    // Add event listener
     window.addEventListener('wheel', handleWheel);
-    return () => window.removeEventListener('wheel', handleWheel);
-  }, [lastWheelTime, scrollCount, ship, isAnimating]);
+    
+    // Cleanup function
+    return () => {
+      window.removeEventListener('wheel', handleWheel);
+      if (wheelTimerRef.current) {
+        clearTimeout(wheelTimerRef.current);
+      }
+    };
+  }, [scrollCount, ship, isAnimating]);
 
   function getRandomInRange() {
     return Math.random() * 0.2 - 0.1;
   }
+  
   function getRandomRadianAngle() {
     const angles = [Math.PI / 3, Math.PI / 4, Math.PI / 2];
     const randomIndex = Math.floor(Math.random() * angles.length);
@@ -205,7 +275,12 @@ const ThreeScene = () => {
   }
 
   const handlePlanetClick = (planetIdx) => {
-    if (!ship) return;
+    if (!ship || animationInProgressRef.current) return;
+    
+    // Prevent wheel events during planet click navigation
+    animationInProgressRef.current = true;
+    setIsAnimating(true);
+    
     gsap.to(ship.scale, {
       x: 0,
       y: 0,
@@ -213,10 +288,11 @@ const ThreeScene = () => {
       duration: 1,
       onComplete: () => {
         setTimeout(() => {
-          window.location.href = planetRoutes[planetIdx];
+          // window.location.href = planetRoutes[planetIdx];
         }, 250);
       },
     });
+    
     gsap.to(ship.position, {
       y: -0.1,
       ease: 'power1.inOut',
@@ -224,14 +300,47 @@ const ThreeScene = () => {
     });
   };
 
+  // Ship click handler: scale down ship with GSAP
+  const handleShipClick = () => {
+    if (!ship) return;
+    
+    gsap.to(ship.scale, {
+      x: 0,
+      y: 0,
+      z: 0,
+      duration: 1,
+      ease: "power2.inOut",
+      onComplete: () => {
+        // Optional: Reset scale after animation if needed
+        // gsap.to(ship.scale, {
+        //   x: 0.01,
+        //   y: 0.01,
+        //   z: 0.01,
+        //   duration: 1,
+        //   delay: 1
+        // });
+      }
+    });
+  };
+
+  // Set initial rotation when component mounts
+  useEffect(() => {
+    if (groupRef.current) {
+      groupRef.current.rotation.y = targetRotationRef.current;
+    }
+    if (starRef.current) {
+      starRef.current.rotation.y = targetRotationRef.current;
+    }
+  }, []);
+
   return (
     <Canvas camera={{ position: [0, 0, 10], fov: 25 }} style={{ position: 'absolute', inset: 0 }}>
       <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 10, 5]} intensity={1} />
+      {/* <directionalLight position={[10, 10, 5]} intensity={1} /> */}
       <Environment />
       <StarsBG starRef={starRef} />
       <PlanetsGroup groupRef={groupRef} onPlanetClick={handlePlanetClick} />
-      <Ship onShipLoaded={setShip} />
+      <Ship onShipLoaded={setShip} onClick={handleShipClick} />
     </Canvas>
   );
 };
